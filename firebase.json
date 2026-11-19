@@ -1,0 +1,89 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      "firestore.rules",
+      "functions/**",
+      "**/*.bak",
+      "**/*.xml",
+      "**/*.log",
+      "**/*.md",
+      "**/*.php",
+      "test_runner.js",
+      "sepay-webhook-worker.js",
+      "**/.*"
+    ],
+    "cleanUrls": true,
+    "headers": [
+      {
+        "source": "/admin",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(js|html)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/api/sepay-webhook",
+        "function": {
+          "functionId": "sepayWebhook",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/api/submit-order",
+        "function": {
+          "functionId": "submitOrder",
+          "region": "asia-southeast1"
+        }
+      },
+      {
+        "source": "/api/staff-login",
+        "function": {
+          "functionId": "verifyStaffLogin",
+          "region": "asia-southeast1"
+        }
+      }
+    ]
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
+

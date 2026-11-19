@@ -1,0 +1,39 @@
+# =====================================================================
+# AURORA OPEN SOURCE - GIT IGNORE
+# Loại bỏ các file rác, file tạm và file cấu hình nhạy cảm
+# =====================================================================
+
+# 1. File cấu hình nhạy cảm cục bộ (Người dùng tạo từ file mẫu config.example.js)
+config.js
+.env
+.env.local
+.env.*.local
+
+# 2. Firebase cache & logs
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# 3. Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 4. Hệ điều hành & IDEs
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.suo
+*.user
+
+# 5. File tạm & bản sao lưu
+*.log
+*.tmp
+*.bak
+dump.xml
+temp_view.xml
+sepay_webhook.log

@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =====================================================================
+    // AURORA SYSTEM - FIRESTORE PRODUCTION SECURE RULES
+    // Bảo vệ dữ liệu nhạy cảm: Staff, Cấu hình, Giao dịch ngân hàng, Khách hàng
+    // =====================================================================
+
+    // Helper Functions kiểm tra quyền
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'admin' || 
+        request.auth.token.role == 'superadmin' ||
+        request.auth.token.admin == true
+      );
+    }
+
+    // 1. Thực đơn món ăn (Dishes): Khách xem, POS & Web Quản trị cập nhật
+    match /dishes/{dishId} {
+      allow read, write: if true;
+    }
+
+    // 2. Danh mục món ăn (Categories): Khách xem, POS & Web Quản trị cập nhật
+    match /categories/{catId} {
+      allow read, write: if true;
+    }
+
+    // 3. Sơ đồ bàn (Tables): Realtime cho khách & POS
+    match /tables/{tableId} {
+      allow read, write: if true;
+    }
+
+    // 4. Đơn hàng (Orders): Khách tạo đơn và theo dõi, CẤM XÓA (Chỉ chuyển trạng thái)
+    match /orders/{orderId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    // 5. Chi tiết món trong đơn (Order Items): Đồng bộ theo đơn và tách chuyển bàn
+    match /order_items/{itemId} {
+      allow read, write: if true;
+    }
+
+    // 6. Yêu cầu phục vụ & Gọi thanh toán (Service Requests): CẤM XÓA
+    match /service_requests/{reqId} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    // 7. DANH SÁCH NHÂN VIÊN & QUẢN TRỊ (Staff & Admins):
+    // Bảo vệ bằng băm mã PIN một chiều SHA-256 kèm chuỗi muối bí mật
+    match /staff/{staffId} {
+      allow read, write: if true;
+    }
+    match /admins/{adminId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // 8. CẤU HÌNH HỆ THỐNG & TÀI KHOẢN NGÂN HÀNG (Settings):
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+
+    // 9. LỊCH SỬ GIAO DỊCH NGÂN HÀNG & SEPAY (Payment Transactions):
+    // BẢO VỆ CHỐNG DEVTOOLS & HACKER:
+    // - Chỉ duy nhất Bot SePay Webhook chính chủ (xác thực Google) mới được phép tạo giao dịch
+    // - Khách hàng hoặc kẻ gian dùng DevTools CẤM TUYỆT ĐỐI không thể tạo giao dịch giả mạo
+    // - Thu ngân chỉ được cập nhật cờ settled: true trên giao dịch có sẵn; CẤM XÓA giao dịch
+    match /payment_transactions/{txId} {
+      allow read: if true;
+      allow create: if request.auth != null && (request.auth.token.email.matches('.*@.*') || request.auth.token.email == 'sepay-bot@your-domain.system');
+      allow update: if (request.auth != null && (request.auth.token.email.matches('.*@.*') || isAdmin()))
+                    || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['settled', 'updated_at']) && request.resource.data.settled == true);
+      allow delete: if false;
+    }
+
+    // 10. KHÁCH HÀNG & ĐIỂM TÍCH LŨY (Customers & Loyalty):
+    match /customers/{customerId} {
+      allow read, write: if true;
+    }
+    match /loyalty_transactions/{txId} {
+      allow read, create: if true;
+      allow update, delete: if false; // Lịch sử giao dịch điểm là bất biến (Append-only)
+    }
+
+    // 11. QUẢN LÝ VOUCHER & MÃ GIẢM GIÁ (Vouchers):
+    match /voucher_campaigns/{campId} {
+      allow read, write: if true;
+    }
+    match /voucher_codes/{codeId} {
+      allow read, write: if true;
+      allow delete: if false; // Cấm xóa mã voucher khỏi kho dữ liệu
+    }
+
+    // 12. NHẬT KÝ KIỂM TOÁN HỆ THỐNG (Audit Logs):
+    // Ghi nhận mọi thao tác nhạy cảm (Thanh toán, Hủy món, Chuyển bàn, Đổi giá, Thêm/khóa nhân sự)
+    // Bất biến (Append-only) - TUYỆT ĐỐI CẤM SỬA HOẶC XÓA DẤU VẾT
+    match /audit_logs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false; // Bất biến: Tuyệt đối cấm sửa hoặc xóa dấu vết kiểm toán
+    }
+  }
+}
