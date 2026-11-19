@@ -42,6 +42,14 @@
 
 ---
 
+## 🌐 HỆ SINH THÁI AURORA POS ECOSYSTEM
+
+Dự án này gồm 2 nền tảng mã nguồn mở độc lập và tương thích hoàn toàn với nhau:
+1. 🌐 **Web QR Ordering & Cloud POS:** [aurora-pos-system](https://github.com/vmhuong/aurora-pos-system) *(Repo hiện tại)*
+2. 📱 **Native Android Staff & Kitchen Display (KDS) App:** [aurora-pos-android](https://github.com/vmhuong/aurora-pos-android)
+
+---
+
 ## 🏗️ KIẾN TRÚC HỆ THỐNG
 
 ```
