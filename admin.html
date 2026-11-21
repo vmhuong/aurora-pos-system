@@ -96,6 +96,22 @@
         .animate-spin-slow {
             animation: spin-slow 8s linear infinite;
         }
+        /* Thanh Sidebar Nav Items: Active state to rõ, sáng rực rỡ, dễ nhận diện */
+        .tab-btn {
+            border-left: 4px solid transparent;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .tab-btn.active-tab {
+            color: #fbbf24 !important; /* amber-400 */
+            background: linear-gradient(90deg, rgba(245, 158, 11, 0.25) 0%, rgba(245, 158, 11, 0.08) 100%) !important;
+            border-left: 4px solid #f59e0b !important;
+            font-weight: 700 !important;
+            box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.12) !important;
+        }
+        .tab-btn.active-tab i {
+            color: #fbbf24 !important;
+            filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.6)) !important;
+        }
     </style>
 </head>
 <body class="bg-[#f8f9fa] text-[#2c2621] min-h-screen font-sans">
@@ -1585,9 +1601,9 @@
                     Chạm vào bàn bạn muốn chuyển đến trong danh sách dưới đây:
                 </div>
 
-                <!-- Grid Bàn Đích Rộng Rãi Bao Quát Toàn Bộ Các Bàn -->
-                <div id="td-target-grid" class="flex-1 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-[56vh] p-1">
-                    <!-- Danh sách các bàn sạch đẹp, không badge thừa -->
+                <!-- Grid Bàn Đích Rộng Rãi Bao Quát Toàn Bộ Các Bàn (Hiển thị 4 cột theo hàng đúng như Sơ Đồ Bàn) -->
+                <div id="td-target-grid" class="flex-1 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-4 gap-3 max-h-[56vh] p-1">
+                    <!-- Danh sách các bàn sạch đẹp, hàng cột chuẩn theo sơ đồ bàn -->
                 </div>
 
                 <!-- Summary Note khi chọn bàn -->
@@ -2961,18 +2977,20 @@
             if (tabName === 'audit' && isAdmin && typeof window.renderAuditLogView === 'function') {
                 window.renderAuditLogView();
             }
-                window.renderAuditLogView();
-            }
 
-            // Cập nhật trạng thái active mà KHÔNG ghi đè class hidden hay style display
+            // Cập nhật trạng thái active tab thanh bar (Rõ ràng, trực quan, có viền highlight amber)
             document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('text-[#d4af37]', 'bg-[#27231e]', 'font-semibold');
+                btn.classList.remove('active-tab', 'text-amber-400', 'text-amber-300', 'text-[#d4af37]', 'bg-[#27231e]', 'font-semibold', 'font-bold');
                 btn.classList.add('text-[#9f9587]', 'font-medium');
+                const ic = btn.querySelector('i');
+                if (ic) ic.classList.remove('text-amber-400', 'text-amber-300');
             });
             const activeBtn = document.getElementById(`nav-${tabName}`);
             if (activeBtn) {
                 activeBtn.classList.remove('text-[#9f9587]', 'font-medium');
-                activeBtn.classList.add('text-[#d4af37]', 'bg-[#27231e]', 'font-semibold');
+                activeBtn.classList.add('active-tab', 'font-bold');
+                const ic = activeBtn.querySelector('i');
+                if (ic) ic.classList.add('text-amber-400');
             }
 
             // Luôn đảm bảo phân quyền ẩn/hiện tab đúng theo vai trò
@@ -3023,7 +3041,7 @@
                 window.renderServiceRequests();
                 if (typeof window.updateServiceSoundUI === 'function') window.updateServiceSoundUI();
             }
-        ;
+        };
 
         // Chạy phân quyền sớm nhất có thể ngay khi tải trang
         try {
@@ -3542,14 +3560,16 @@
                 const isStaff = (typeof window.isStaffRole === 'function') && window.isStaffRole(r);
                 if (isStaff) {
                     switchTab('orders');
-                } else if (!isAdmin) {
-                    // Quản lý: Đảm bảo chuyển về Dashboard nếu tab hiện tại là tab đặc quyền Admin
+                } else {
                     const currentTabEl = document.querySelector('.tab-content:not(.hidden)');
-                    const currentTabId = currentTabEl ? currentTabEl.id.replace('tab-', '') : 'dashboard';
-                    const adminOnlyTabs = ['tables', 'staff', 'customers', 'voucher', 'audit', 'sepay'];
-                    if (adminOnlyTabs.includes(currentTabId)) {
-                        switchTab('dashboard');
+                    let currentTabId = currentTabEl ? currentTabEl.id.replace('tab-', '') : 'orders';
+                    if (!isAdmin) {
+                        const adminOnlyTabs = ['tables', 'staff', 'customers', 'voucher', 'audit', 'sepay'];
+                        if (adminOnlyTabs.includes(currentTabId)) {
+                            currentTabId = 'dashboard';
+                        }
                     }
+                    switchTab(currentTabId);
                 }
             } catch(e) {}
 

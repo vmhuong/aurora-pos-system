@@ -129,6 +129,36 @@
     root.tableVouchers = tableVouchers;
     if (typeof window !== 'undefined') window.tableVouchers = tableVouchers;
 
+    // THUẬT TOÁN SẮP XẾP BÀN TỰ NHIÊN CHUẨN XÁC THEO KHU VỰC VÀ SỐ (A1, A2... B1, B2... C1, C2...)
+    function getTableSortKey(tableNameOrObj) {
+        const raw = (typeof tableNameOrObj === 'object' && tableNameOrObj !== null)
+            ? (tableNameOrObj.name || tableNameOrObj.id || tableNameOrObj.tableId || '')
+            : String(tableNameOrObj || '');
+        const clean = raw.replace(/^(bàn|ban|table)\s*/i, '').trim().toUpperCase();
+        const match = clean.match(/^([A-Z]*)(\d+)?(.*)$/);
+        if (match) {
+            const prefix = match[1] || 'ZZ';
+            const num = match[2] ? parseInt(match[2], 10) : 9999;
+            const suffix = match[3] || '';
+            return { prefix, num, suffix, clean };
+        }
+        return { prefix: clean, num: 9999, suffix: '', clean };
+    }
+    window.getTableSortKey = getTableSortKey;
+
+    function compareTableOrder(a, b) {
+        const keyA = getTableSortKey(a);
+        const keyB = getTableSortKey(b);
+        if (keyA.prefix !== keyB.prefix) {
+            return keyA.prefix.localeCompare(keyB.prefix);
+        }
+        if (keyA.num !== keyB.num) {
+            return keyA.num - keyB.num;
+        }
+        return keyA.suffix.localeCompare(keyB.suffix);
+    }
+    window.compareTableOrder = compareTableOrder;
+
         /* ================= 3. QUẢN LÝ BÀN & MÃ QR ================= */
         async function loadTables() {
             try {
@@ -171,8 +201,8 @@
 
                 allTables = Array.from(uniqueMap.values());
 
-                // Sắp xếp thứ tự tự nhiên (T1, T2, T3...)
-                allTables.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+                // Sắp xếp thứ tự tự nhiên chuẩn xác (A1, A2, A3... B1, B2... C1, C2...)
+                allTables.sort(compareTableOrder);
                 root.allTables = allTables;
                 if (typeof window !== 'undefined') window.allTables = allTables;
 
@@ -256,6 +286,7 @@
                     });
 
                     if (hasTableChanges) {
+                        allTables.sort(compareTableOrder);
                         root.allTables = allTables;
                         if (typeof window !== 'undefined') window.allTables = allTables;
                         scheduleRenderTableBoard();
@@ -661,7 +692,7 @@
             }
 
             closeAutoTablesModal();
-            allTables.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            allTables.sort(compareTableOrder);
             renderAllTableQRs();
             scheduleRenderTableBoard();
             alert(`Đã tự động tạo thêm ${addedCount} bàn và kích hoạt mã QR thành công!`);
@@ -820,7 +851,8 @@
             const filterBar = document.getElementById('table-filter-bar');
             if (!grid) return;
 
-            // 1. Phân loại và tính toán trạng thái cho từng bàn (Tối ưu hóa gom dữ liệu O(N))
+            // 1. Phân loại và tính toán trạng thái cho từng bàn (Đảm bảo thứ tự bàn luôn chuẩn A1..A4, B1..B4, C1..C4)
+            allTables.sort(compareTableOrder);
             const tableDataList = [];
             let countAll = allTables.length;
             let countActive = 0;
@@ -1949,42 +1981,64 @@
         }
 
         // =========================================================================
-        // BƯỚC 2: RENDER GRID CHỌN BÀN ĐÍCH (KHUNG NHÌN RỘNG, BỎ BADGE THỪA)
+        // BƯỚC 2: RENDER GRID CHỌN BÀN ĐÍCH (HIỂN THỊ HÀNG CỘT CHUẨN THEO SƠ ĐỒ BÀN)
         // =========================================================================
         function renderTdTargetGrid() {
             const container = document.getElementById('td-target-grid');
             if (!container) return;
 
-            const otherTables = allTables.filter(t => {
-                const tName = t.name || t.id || t.tableId;
-                return !isSameTable(tName, tdCurrentTable);
-            });
+            // Đảm bảo toàn bộ các bàn luôn được sắp xếp theo đúng quy chuẩn thứ tự bàn (A1..A4, B1..B4, C1..C4)
+            const sortedTables = [...allTables].sort(compareTableOrder);
 
-            if (otherTables.length === 0) {
-                container.innerHTML = `<div class="col-span-full py-8 text-center text-gray-400 italic text-xs">Không có bàn nào khác trong hệ thống để chuyển/gộp.</div>`;
+            if (sortedTables.length === 0) {
+                container.innerHTML = `<div class="col-span-full py-8 text-center text-gray-400 italic text-xs">Không có bàn nào trong hệ thống để chuyển/gộp.</div>`;
                 return;
             }
 
             let html = '';
-            otherTables.forEach(t => {
+            sortedTables.forEach(t => {
                 const tName = t.name || t.id || t.tableId;
                 const clean = tName.replace(/^(bàn\s*)+/i, '').trim() || tName;
-                const isSelected = isSameTable(tName, tdSelectedTargetTable);
+                const isSource = isSameTable(tName, tdCurrentTable);
+                const isSelected = !isSource && isSameTable(tName, tdSelectedTargetTable);
                 const tableOrders = allOrders.filter(o => isSameTable(o.table_id, tName) && !['settled', 'paid', 'transferred', 'cancelled'].includes(o.status));
                 const hasActiveOrders = tableOrders.length > 0;
 
-                const cardBorder = isSelected
-                    ? 'border-2 border-amber-500 bg-amber-50/80 shadow-md ring-2 ring-amber-400/40 text-amber-950 scale-[1.02]'
-                    : 'border border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/20 text-gray-800 shadow-2xs';
-
-                html += `
-                    <div onclick="selectTdTarget('${tName}')" ondblclick="goToTdStep('action')" class="p-3.5 rounded-2xl cursor-pointer transition flex flex-col justify-center items-center text-center select-none ${cardBorder}">
-                        <div class="font-black text-sm sm:text-base">Bàn ${clean}</div>
-                        <div class="text-xs ${hasActiveOrders ? 'text-amber-700 font-bold' : 'text-gray-400'} mt-1">
-                            ${hasActiveOrders ? `Có khách (${tableOrders.length} đợt)` : 'Bàn trống'}
+                if (isSource) {
+                    // Bàn nguồn (Bàn hiện tại đang thao tác chuyển đi): Giữ nguyên vị trí hàng-cột nhưng khóa không cho chọn chính nó
+                    html += `
+                        <div class="p-3 sm:p-3.5 rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50/50 cursor-not-allowed opacity-80 shadow-inner select-none flex flex-col justify-center items-center text-center" title="Bàn nguồn đang thao tác chuyển món">
+                            <div class="font-black text-sm sm:text-base text-amber-950">Bàn ${clean}</div>
+                            <div class="mt-1">
+                                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-black shadow-2xs">Bàn nguồn</span>
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                } else if (isSelected) {
+                    // Bàn đích đang được chọn: Viền vàng hổ phách nổi bật, hiệu ứng scale
+                    html += `
+                        <div onclick="selectTdTarget('${tName}')" ondblclick="goToTdStep('action')" class="p-3 sm:p-3.5 rounded-2xl cursor-pointer transition flex flex-col justify-center items-center text-center select-none border-2 border-amber-500 bg-amber-50/90 shadow-md ring-2 ring-amber-400/50 scale-[1.02] text-amber-950 font-bold" title="Nhấp đúp để tiếp tục chuyển món">
+                            <div class="font-black text-sm sm:text-base text-amber-900">Bàn ${clean}</div>
+                            <div class="text-xs ${hasActiveOrders ? 'text-amber-700 font-bold' : 'text-emerald-700 font-bold'} mt-1 flex items-center gap-1 justify-center">
+                                <i class="fa-solid fa-circle-check text-amber-600 text-[10px]"></i>
+                                <span>${hasActiveOrders ? `Có khách (${tableOrders.length} đợt)` : 'Bàn trống'}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // Các bàn đích hợp lệ khác
+                    const cardBg = hasActiveOrders
+                        ? 'border border-amber-200 bg-amber-50/30 hover:border-amber-400 hover:bg-amber-50/60 text-gray-800 shadow-2xs'
+                        : 'border border-gray-200 bg-white hover:border-amber-300 hover:bg-amber-50/20 text-gray-800 shadow-2xs';
+                    html += `
+                        <div onclick="selectTdTarget('${tName}')" ondblclick="goToTdStep('action')" class="p-3 sm:p-3.5 rounded-2xl cursor-pointer transition flex flex-col justify-center items-center text-center select-none ${cardBg}">
+                            <div class="font-black text-sm sm:text-base">Bàn ${clean}</div>
+                            <div class="text-xs ${hasActiveOrders ? 'text-amber-700 font-semibold' : 'text-gray-400'} mt-1">
+                                ${hasActiveOrders ? `Có khách (${tableOrders.length} đợt)` : 'Bàn trống'}
+                            </div>
+                        </div>
+                    `;
+                }
             });
 
             container.innerHTML = html;
