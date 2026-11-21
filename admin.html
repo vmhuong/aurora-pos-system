@@ -96,21 +96,72 @@
         .animate-spin-slow {
             animation: spin-slow 8s linear infinite;
         }
-        /* Thanh Sidebar Nav Items: Active state to rõ, sáng rực rỡ, dễ nhận diện */
+
+        /* ================= SIDEBAR CHUẨN GOOGLE / FIREBASE CONSOLE ================= */
+        #admin-sidebar {
+            transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #admin-sidebar.collapsed {
+            width: 72px !important;
+            min-width: 72px !important;
+        }
+        #admin-sidebar.collapsed .sidebar-text,
+        #admin-sidebar.collapsed .sidebar-badge {
+            display: none !important;
+        }
+        #admin-sidebar.collapsed .sidebar-header-box {
+            padding: 1rem 0.5rem !important;
+            justify-content: center !important;
+        }
+        #admin-sidebar.collapsed nav {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        #admin-sidebar.collapsed .tab-btn {
+            justify-content: center !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+            gap: 0 !important;
+        }
+        #admin-sidebar.collapsed .tab-btn i {
+            width: 100% !important;
+            text-align: center !important;
+            font-size: 1.15rem !important;
+        }
+        #admin-sidebar.collapsed .sidebar-footer-btn {
+            justify-content: center !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+        #admin-sidebar.collapsed #btn-toggle-sidebar {
+            justify-content: center !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
+        }
+
+        /* Hover & Active tối giản, sang trọng chuẩn Firebase Console */
         .tab-btn {
-            border-left: 4px solid transparent;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 12px;
+            color: #9f9587;
+            background: transparent;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .tab-btn:hover {
+            background-color: rgba(255, 255, 255, 0.08) !important;
+            color: #ffffff !important;
+        }
+        .tab-btn:hover i {
+            color: #ffffff !important;
         }
         .tab-btn.active-tab {
-            color: #fbbf24 !important; /* amber-400 */
-            background: linear-gradient(90deg, rgba(245, 158, 11, 0.25) 0%, rgba(245, 158, 11, 0.08) 100%) !important;
-            border-left: 4px solid #f59e0b !important;
-            font-weight: 700 !important;
-            box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.12) !important;
+            background-color: rgba(255, 255, 255, 0.14) !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
         }
         .tab-btn.active-tab i {
-            color: #fbbf24 !important;
-            filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.6)) !important;
+            color: #ffffff !important;
+            filter: none !important;
         }
     </style>
 </head>
@@ -171,16 +222,16 @@
     <!-- ================= LAYOUT CHÍNH (Sau khi đăng nhập) ================= -->
     <div id="admin-app" class="hidden h-screen overflow-hidden flex flex-col md:flex-row">
 
-        <!-- SIDEBAR (Luôn cố định / đứng yên khi cuộn nội dung bên cạnh) -->
-        <aside class="w-full md:w-64 h-auto md:h-screen bg-[#1a1714] text-[#e8e2d8] flex flex-col justify-between shrink-0 border-r border-[#2e2923] overflow-y-auto no-scrollbar md:sticky md:top-0 z-30">
+        <!-- SIDEBAR (Luôn cố định / đứng yên khi cuộn nội dung bên cạnh, hỗ trợ thu gọn sang trái) -->
+        <aside id="admin-sidebar" class="w-full md:w-64 h-auto md:h-screen bg-[#1a1714] text-[#e8e2d8] flex flex-col justify-between shrink-0 border-r border-[#2e2923] overflow-y-auto no-scrollbar md:sticky md:top-0 z-30 transition-all duration-300 ease-in-out">
             <div>
                 <!-- Brand Header -->
-                <div class="p-6 border-b border-[#2e2923] flex items-center justify-between">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 bg-black border border-[#d4af37] rounded-full flex items-center justify-center text-[#d4af37] font-bold text-xs">
+                <div class="sidebar-header-box p-4 md:p-5 border-b border-[#2e2923] flex items-center justify-between">
+                    <div class="flex items-center space-x-3 overflow-hidden">
+                        <div class="w-10 h-10 bg-black border border-[#d4af37] rounded-full flex items-center justify-center text-[#d4af37] font-bold text-xs shrink-0">
                             AU
                         </div>
-                        <div>
+                        <div class="sidebar-text truncate">
                             <h1 class="font-bold text-sm text-[#f4efe6]">Aurora Admin</h1>
                             <div id="admin-user-display" class="text-[11px] leading-tight">
                                 <span class="text-[10px] text-[#d4af37] font-semibold block">Quản trị viên</span>
@@ -191,63 +242,75 @@
                 </div>
 
                 <!-- Navigation Links -->
-                <nav class="p-4 space-y-1.5 text-sm">
-                    <button onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition relative">
-                        <i class="fa-solid fa-chart-pie w-5 text-center"></i>
-                        <span>Tổng quan</span>
+                <nav class="p-3 space-y-1.5 text-sm">
+                    <button onclick="switchTab('dashboard')" id="nav-dashboard" title="Tổng quan" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition relative group">
+                        <i class="fa-solid fa-chart-pie w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Tổng quan</span>
                     </button>
 
-                    <button onclick="switchTab('orders')" id="nav-orders" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition relative">
-                        <i class="fa-solid fa-table-cells-large w-5 text-center"></i>
-                        <span>Sơ đồ Bàn & Đơn hàng</span>
-                        <span id="badge-pending-orders" class="hidden ml-auto bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
+                    <button onclick="switchTab('orders')" id="nav-orders" title="Sơ đồ Bàn & Đơn hàng" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition relative group">
+                        <i class="fa-solid fa-table-cells-large w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Sơ đồ Bàn & Đơn hàng</span>
+                        <span id="badge-pending-orders" class="sidebar-badge hidden ml-auto bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
                     </button>
-                    <button onclick="switchTab('menu')" id="nav-menu" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition">
-                        <i class="fa-solid fa-utensils w-5 text-center"></i>
-                        <span>Quản lý thực đơn</span>
+                    <button onclick="switchTab('menu')" id="nav-menu" title="Quản lý thực đơn" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group">
+                        <i class="fa-solid fa-utensils w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Quản lý thực đơn</span>
                     </button>
-                    <button onclick="switchTab('tables')" id="nav-tables" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition">
-                        <i class="fa-solid fa-qrcode w-5 text-center"></i>
-                        <span>Quản lý Bàn & QR</span>
+                    <button onclick="switchTab('tables')" id="nav-tables" title="Quản lý Bàn & QR" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group">
+                        <i class="fa-solid fa-qrcode w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Quản lý Bàn & QR</span>
                     </button>
-                    <button onclick="switchTab('service')" id="nav-service" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition relative">
-                        <i class="fa-solid fa-bell w-5 text-center"></i>
-                        <span>Gọi phục vụ</span>
-                        <span id="badge-pending-service" class="hidden ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
+                    <button onclick="switchTab('service')" id="nav-service" title="Gọi phục vụ" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition relative group">
+                        <i class="fa-solid fa-bell w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Gọi phục vụ</span>
+                        <span id="badge-pending-service" class="sidebar-badge hidden ml-auto bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">0</span>
                     </button>
-                    <button onclick="switchTab('staff')" id="nav-staff" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition">
-                        <i class="fa-solid fa-users-gear w-5 text-center"></i>
-                        <span>Quản lý Nhân Viên</span>
+                    <button onclick="switchTab('staff')" id="nav-staff" title="Quản lý Nhân Viên" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group">
+                        <i class="fa-solid fa-users-gear w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Quản lý Nhân Viên</span>
                     </button>
                     <!-- Quản lý Khách hàng (Admin & Quản lý) -->
-                    <button onclick="switchTab('customers')" id="nav-customers" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition">
-                        <i class="fa-solid fa-address-card w-5 text-center"></i>
-                        <span>Quản lý Khách hàng</span>
+                    <button onclick="switchTab('customers')" id="nav-customers" title="Quản lý Khách hàng" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group">
+                        <i class="fa-solid fa-address-card w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Quản lý Khách hàng</span>
                     </button>
                     <!-- Quản lý Voucher (Chỉ Admin mới được truy cập) -->
-                    <button onclick="switchTab('voucher')" id="nav-voucher" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition">
-                        <i class="fa-solid fa-ticket w-5 text-center"></i>
-                        <span>Quản lý Voucher</span>
+                    <button onclick="switchTab('voucher')" id="nav-voucher" title="Quản lý Voucher" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group">
+                        <i class="fa-solid fa-ticket w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Quản lý Voucher</span>
                     </button>
                     <!-- Nhật ký kiểm toán (Admin & Quản lý) -->
-                    <button onclick="switchTab('audit')" id="nav-audit" class="tab-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition">
-                        <i class="fa-solid fa-clipboard-list w-5 text-center"></i>
-                        <span>Nhật ký kiểm toán</span>
+                    <button onclick="switchTab('audit')" id="nav-audit" title="Nhật ký kiểm toán" class="tab-btn w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group">
+                        <i class="fa-solid fa-clipboard-list w-5 text-center text-sm shrink-0"></i>
+                        <span class="sidebar-text truncate">Nhật ký kiểm toán</span>
                     </button>
                     <!-- Cổng Thanh Toán SePay MB Bank (Mặc định ẩn, chỉ Admin mới được mở) -->
-                    <button onclick="openPaymentSettingsModal()" id="nav-sepay" style="display: none;" class="hidden w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-[#9f9587] hover:text-[#f4efe6] hover:bg-[#27231e] font-medium transition group" title="Cài đặt cổng tự động nhận chuyển khoản MB Bank">
-                        <i class="fa-solid fa-bolt-lightning w-5 text-center text-amber-500 group-hover:scale-110 transition-transform"></i>
-                        <span class="text-xs">Cổng Thanh Toán MB</span>
-                        <span id="sidebar-sepay-indicator" class="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Tự động nhận biến động số dư MB Bank"></span>
+                    <button onclick="openPaymentSettingsModal()" id="nav-sepay" style="display: none;" class="hidden w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[#9f9587] font-medium transition group" title="Cài đặt cổng tự động nhận chuyển khoản MB Bank">
+                        <i class="fa-solid fa-bolt-lightning w-5 text-center text-amber-500 group-hover:scale-110 transition-transform text-sm shrink-0"></i>
+                        <span class="sidebar-text text-xs truncate">Cổng Thanh Toán MB</span>
+                        <span id="sidebar-sepay-indicator" class="sidebar-badge ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Tự động nhận biến động số dư MB Bank"></span>
                     </button>
                 </nav>
             </div>
 
-            <!-- Footer / Logout -->
-            <div class="p-4 border-t border-[#2e2923]">
-                <button onclick="handleLogout()" class="w-full flex items-center justify-center gap-2 py-2.5 px-3 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/30 rounded-xl transition font-medium">
-                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Đăng xuất
+            <!-- Footer / Actions & Collapse Button -->
+            <div class="p-3 border-t border-[#2e2923] space-y-2">
+                <!-- Nút Đăng xuất -->
+                <button onclick="handleLogout()" title="Đăng xuất khỏi hệ thống" class="sidebar-footer-btn w-full flex items-center gap-2.5 py-2 px-3 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/30 rounded-xl transition font-medium">
+                    <i class="fa-solid fa-arrow-right-from-bracket w-5 text-center shrink-0"></i>
+                    <span class="sidebar-text truncate">Đăng xuất</span>
                 </button>
+
+                <!-- Nút Kéo Gọn / Mở Rộng Thanh Bar (Chuẩn Firebase Console) -->
+                <div class="pt-1 flex items-center justify-between border-t border-[#2e2923]/60">
+                    <button onclick="toggleSidebarCollapse()" id="btn-toggle-sidebar" class="w-full flex items-center justify-between py-1.5 px-2.5 rounded-xl text-[#8e8578] hover:text-[#f4efe6] hover:bg-white/5 transition text-xs font-medium group" title="Thu gọn thanh menu sang trái">
+                        <span id="label-toggle-sidebar" class="sidebar-text text-[11px] text-[#9f9587] group-hover:text-[#f4efe6]">Thu gọn menu</span>
+                        <div class="w-7 h-7 rounded-full bg-[#27231e] group-hover:bg-white/10 flex items-center justify-center transition shadow-2xs shrink-0 mx-auto md:mx-0">
+                            <i id="icon-toggle-sidebar" class="fa-solid fa-chevron-left text-[11px] transition-transform duration-200"></i>
+                        </div>
+                    </button>
+                </div>
             </div>
         </aside>
 
@@ -2978,19 +3041,19 @@
                 window.renderAuditLogView();
             }
 
-            // Cập nhật trạng thái active tab thanh bar (Rõ ràng, trực quan, có viền highlight amber)
+            // Cập nhật trạng thái active tab thanh bar (Đơn giản, tinh tế chuẩn Firebase Console)
             document.querySelectorAll('.tab-btn').forEach(btn => {
-                btn.classList.remove('active-tab', 'text-amber-400', 'text-amber-300', 'text-[#d4af37]', 'bg-[#27231e]', 'font-semibold', 'font-bold');
+                btn.classList.remove('active-tab', 'text-white', 'font-semibold');
                 btn.classList.add('text-[#9f9587]', 'font-medium');
                 const ic = btn.querySelector('i');
-                if (ic) ic.classList.remove('text-amber-400', 'text-amber-300');
+                if (ic) ic.classList.remove('text-white');
             });
             const activeBtn = document.getElementById(`nav-${tabName}`);
             if (activeBtn) {
                 activeBtn.classList.remove('text-[#9f9587]', 'font-medium');
-                activeBtn.classList.add('active-tab', 'font-bold');
+                activeBtn.classList.add('active-tab');
                 const ic = activeBtn.querySelector('i');
-                if (ic) ic.classList.add('text-amber-400');
+                if (ic) ic.classList.add('text-white');
             }
 
             // Luôn đảm bảo phân quyền ẩn/hiện tab đúng theo vai trò
@@ -3042,6 +3105,53 @@
                 if (typeof window.updateServiceSoundUI === 'function') window.updateServiceSoundUI();
             }
         };
+
+        // =========================================================================
+        // BẬT / TẮT THU GỌN THANH MENU SANG TRÁI (CHUẨN FIREBASE CONSOLE)
+        // =========================================================================
+        window.toggleSidebarCollapse = function() {
+            const sidebar = document.getElementById('admin-sidebar');
+            if (!sidebar) return;
+            const isCollapsed = sidebar.classList.toggle('collapsed');
+            try {
+                localStorage.setItem('aurora_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+            } catch(e) {}
+            updateSidebarToggleUI(isCollapsed);
+
+            // Tự động căn chỉnh lại kích thước sơ đồ bàn khi sidebar co dãn
+            setTimeout(() => {
+                const grid = document.getElementById('table-board-grid');
+                if (grid && grid.children.length > 0 && typeof window.applyOptimalGrid === 'function') {
+                    window.applyOptimalGrid(grid.children.length);
+                }
+            }, 260);
+        };
+
+        function updateSidebarToggleUI(isCollapsed) {
+            const btn = document.getElementById('btn-toggle-sidebar');
+            const icon = document.getElementById('icon-toggle-sidebar');
+            const label = document.getElementById('label-toggle-sidebar');
+            if (icon) {
+                icon.className = isCollapsed ? "fa-solid fa-chevron-right text-[11px]" : "fa-solid fa-chevron-left text-[11px]";
+            }
+            if (btn) {
+                btn.title = isCollapsed ? "Mở rộng thanh menu" : "Thu gọn thanh menu sang trái";
+            }
+            if (label) {
+                label.innerText = isCollapsed ? "" : "Thu gọn menu";
+            }
+        }
+
+        // Khôi phục trạng thái thu gọn đã lưu từ trước
+        try {
+            if (localStorage.getItem('aurora_sidebar_collapsed') === 'true') {
+                const sb = document.getElementById('admin-sidebar');
+                if (sb) {
+                    sb.classList.add('collapsed');
+                    updateSidebarToggleUI(true);
+                }
+            }
+        } catch(e) {}
 
         // Chạy phân quyền sớm nhất có thể ngay khi tải trang
         try {
