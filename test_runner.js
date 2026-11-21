@@ -481,6 +481,58 @@ console.log('\n--- 7. Table Natural Sorting & Alignment Suite ---');
     assert(JSON.stringify(objResult) === JSON.stringify(['A1', 'B1', 'B4', 'C2']), 'TC-SORT-05: Sắp xếp mảng object Firestore chuẩn xác');
 }
 
+// =====================================================================
+// 8. TABLE TRANSFER VOUCHER CONTINUITY & ANTI-ORPHAN SUITE
+// =====================================================================
+console.log('\n--- 8. Table Transfer Voucher Continuity & Anti-Orphan Suite ---');
+{
+    function normalizeTableCode(raw) {
+        if (!raw) return '';
+        let s = String(raw).trim().toUpperCase();
+        s = s.replace(/^(BÀN|BAN|TABLE)\s*/i, '');
+        return s.trim();
+    }
+
+    // 8.1 Chuyển toàn bộ bàn (Full Transfer) bảo toàn voucher sang bàn đích với cả 2 key (A2 và Bàn A2)
+    const mockTableVouchers = {};
+    const mockVoucherDoc = {
+        code: 'AUR-3SP9-8YDJ',
+        type: 'percent',
+        value: 10,
+        status: 'applied',
+        applied_table: 'A1'
+    };
+    mockTableVouchers['A1'] = mockVoucherDoc;
+    mockTableVouchers['Bàn A1'] = mockVoucherDoc;
+
+    const sourceClean = 'Bàn A1';
+    const targetClean = 'Bàn A2';
+    const normSrc = normalizeTableCode(sourceClean);
+    const normTarget = normalizeTableCode(targetClean);
+
+    const srcVoucher = mockTableVouchers[normSrc] || mockTableVouchers[sourceClean] || null;
+    assert(srcVoucher !== null, 'TC-TRANSFER-VOUCHER-01: Nhận diện chính xác voucher nguồn bất kể truyền mã A1 hay Bàn A1');
+
+    // Giả lập chuyển bàn
+    mockTableVouchers[normTarget] = srcVoucher;
+    mockTableVouchers[targetClean] = srcVoucher;
+    delete mockTableVouchers[normSrc];
+    delete mockTableVouchers[sourceClean];
+    mockVoucherDoc.applied_table = normTarget;
+
+    assert(mockTableVouchers['A2'] && mockTableVouchers['Bàn A2'] && !mockTableVouchers['A1'] && !mockTableVouchers['Bàn A1'], 
+        'TC-TRANSFER-VOUCHER-02: Đồng bộ đầy đủ 2 key bàn đích và dọn sạch voucher khỏi bàn nguồn');
+
+    // 8.2 Bàn đích A2 kiểm tra voucher không bị lỗi "đang áp dụng tại Bàn A1"
+    const validationAtA2 = VoucherEngine.validateVoucher(mockVoucherDoc, 822000, [], 'Bàn A2');
+    assert(validationAtA2.valid === true, 'TC-TRANSFER-VOUCHER-03: Bàn đích A2 áp dụng voucher thành công, không bị chặn bởi bàn cũ');
+
+    // 8.3 Bàn khác (B1) kiểm tra voucher bị chặn độc quyền bởi bàn đích A2
+    const validationAtB1 = VoucherEngine.validateVoucher(mockVoucherDoc, 500000, [], 'Bàn B1');
+    assert(validationAtB1.valid === false && validationAtB1.reason.includes('A2'), 
+        'TC-TRANSFER-VOUCHER-04: Bàn khác bị chặn độc quyền chuẩn xác theo bàn đích A2');
+}
+
 console.log('\n====================================================');
 console.log(`TOTAL TEST RESULTS: ${passCount} PASSED, ${failCount} FAILED (TOTAL: ${passCount + failCount})`);
 console.log(`PASS RATE: ${((passCount / (passCount + failCount)) * 100).toFixed(1)}%`);

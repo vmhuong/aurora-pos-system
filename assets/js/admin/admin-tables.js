@@ -249,7 +249,14 @@
                         const cleanCode = (name || d.id || '').replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
 
                         // 1. Đồng bộ Voucher tức thời (Add / Cancel)
-                        const v = data.applied_voucher;
+                        let v = data.applied_voucher;
+                        const curCheckoutT = (typeof window !== 'undefined' ? window.currentCheckoutTable : '') || root.currentCheckoutTable || '';
+                        if (curCheckoutT && (isSameTable(curCheckoutT, name) || isSameTable(curCheckoutT, cleanCode))) {
+                            if (currentBillAppliedVoucher && (!v || !v.code)) {
+                                v = currentBillAppliedVoucher;
+                            }
+                        }
+
                         if (v && typeof v === 'object' && (v.code || v.id || v.value)) {
                             tableVouchers[cleanCode] = v;
                             if (name) tableVouchers[name] = v;
@@ -2439,13 +2446,27 @@
                         };
 
                         // Chuyển toàn bộ voucher đã áp dụng sang bàn đích (Case 1: Full Transfer)
-                        const srcVoucher = tableVouchers[sourceClean] || null;
+                        const normSrc = (typeof normalizeTableCode === 'function') ? normalizeTableCode(sourceClean) : String(sourceClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
+                        const normTarget = (typeof normalizeTableCode === 'function') ? normalizeTableCode(targetClean) : String(targetClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
+                        const srcVoucher = tableVouchers[normSrc] || tableVouchers[sourceClean] || (sourceTableObj && sourceTableObj.applied_voucher) || null;
                         if (srcVoucher) {
+                            const vCode = String(srcVoucher.code || srcVoucher.id || '').trim().toUpperCase();
                             targetTableUpdate.applied_voucher = srcVoucher;
+                            tableVouchers[normTarget] = srcVoucher;
                             tableVouchers[targetClean] = srcVoucher;
+                            delete tableVouchers[normSrc];
                             delete tableVouchers[sourceClean];
-                            const srcTableDocId = (sourceTableObj && sourceTableObj.id) ? sourceTableObj.id : (normalizeTableCode(sourceClean) || sourceClean);
+                            const srcTableDocId = (sourceTableObj && sourceTableObj.id) ? sourceTableObj.id : (normSrc || sourceClean);
                             batch.set(doc(db, "tables", srcTableDocId), { applied_voucher: null }, { merge: true });
+
+                            // ĐỒNG BỘ FIRESTORE VOUCHER_CODES: Chuyển applied_table sang bàn đích (normTarget)
+                            if (vCode) {
+                                batch.update(doc(db, "voucher_codes", vCode), {
+                                    status: "applied",
+                                    applied_table: normTarget,
+                                    updated_at: serverTimestamp()
+                                });
+                            }
                         }
 
                         batch.set(targetDocRef, targetTableUpdate, { merge: true });
@@ -2626,18 +2647,30 @@
                         root.AdminLoyalty.transferCustomerBetweenTables(sourceClean, targetClean, isAllMoved);
                     }
 
+                    const normSrc = (typeof normalizeTableCode === 'function') ? normalizeTableCode(sourceClean) : String(sourceClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
+                    const normTarget = (typeof normalizeTableCode === 'function') ? normalizeTableCode(targetClean) : String(targetClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
+                    const srcVoucher = tableVouchers[normSrc] || tableVouchers[sourceClean] || null;
+
                     if (isAllMoved) {
                         // Chuyển toàn bộ voucher sang bàn đích
-                        const srcVoucher = tableVouchers[sourceClean] || null;
                         if (srcVoucher) {
+                            const vCode = String(srcVoucher.code || srcVoucher.id || '').trim().toUpperCase();
+                            tableVouchers[normTarget] = srcVoucher;
                             tableVouchers[targetClean] = srcVoucher;
+                            delete tableVouchers[normSrc];
                             delete tableVouchers[sourceClean];
-                            setDoc(doc(db, "tables", targetClean), { applied_voucher: srcVoucher, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
-                            setDoc(doc(db, "tables", sourceClean), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
+                            setDoc(doc(db, "tables", normTarget), { applied_voucher: srcVoucher, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
+                            setDoc(doc(db, "tables", normSrc), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
+                            if (vCode) {
+                                updateDoc(doc(db, "voucher_codes", vCode), {
+                                    status: "applied",
+                                    applied_table: normTarget,
+                                    updated_at: serverTimestamp()
+                                }).catch(() => {});
+                            }
                         }
                     } else {
                         // BÀN NGUỒN CÒN MÓN -> KIỂM TRA LẠI (RE-VALIDATE) VOUCHER BÀN NGUỒN THEO ĐỀ XUẤT 2
-                        const srcVoucher = tableVouchers[sourceClean] || null;
                         if (srcVoucher) {
                             const remainingTotal = tdSplitSourceItems.reduce((s, it) => s + (it.price * it.quantity), 0);
                             let shouldCancelVoucher = false;
@@ -2664,14 +2697,18 @@
                             }
 
                             if (shouldCancelVoucher) {
+                                delete tableVouchers[normSrc];
                                 delete tableVouchers[sourceClean];
-                                setDoc(doc(db, "tables", sourceClean), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
+                                setDoc(doc(db, "tables", normSrc), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
                                 const codeToRelease = srcVoucher.code || srcVoucher.id;
                                 if (codeToRelease) {
                                     updateDoc(doc(db, "voucher_codes", String(codeToRelease).toUpperCase()), {
                                         status: "available",
+                                        applied_table: null,
+                                        applied_at: null,
                                         used_at: null,
-                                        used_by_order: null
+                                        used_by_order: null,
+                                        updated_at: serverTimestamp()
                                     }).catch(() => {});
                                 }
                                 showAdminToast(cancelReason, 'warning');
@@ -3067,7 +3104,10 @@
                 : String(tableName || '').replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
 
             // Khôi phục voucher đã lưu của bàn (SSOT chống mất voucher khi thoát modal)
-            let savedVoucher = tableVouchers[cleanT] || null;
+            const curTableObj = (typeof allTables !== 'undefined' && Array.isArray(allTables)) 
+                ? allTables.find(t => isSameTable(t.name, tableName) || isSameTable(t.id, cleanT)) 
+                : null;
+            let savedVoucher = tableVouchers[cleanT] || tableVouchers[tableName] || (curTableObj && curTableObj.applied_voucher) || null;
             if (savedVoucher) {
                 const sCode = (savedVoucher.code || savedVoucher.id || '').toUpperCase();
                 // Kiểm tra trực tiếp xem voucher đã bị dùng thanh toán chưa
@@ -3079,6 +3119,8 @@
                             // Mã đã sử dụng -> tự động gỡ sạch, không áp dụng vào bàn mới
                             savedVoucher = null;
                             delete tableVouchers[cleanT];
+                            delete tableVouchers[tableName];
+                            if (curTableObj) curTableObj.applied_voucher = null;
                             setDoc(doc(db, "tables", cleanT), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
                         }
                     }
@@ -3104,8 +3146,16 @@
             if (savedVoucher) {
                 if (vInput) vInput.value = savedVoucher.code || savedVoucher.id || '';
                 if (vAppliedInfo) {
-                    const discountAmt = savedVoucher.discountAmount || savedVoucher.discount_amount || 0;
-                    vAppliedInfo.textContent = `Đã áp dụng giảm: ${formatMoney(discountAmt)}`;
+                    let discountAmt = Number(savedVoucher.discountAmount !== undefined ? savedVoucher.discountAmount : savedVoucher.discount_amount) || 0;
+                    if (!discountAmt && root.VoucherEngine && (typeof root.VoucherEngine.calculateDiscount === 'function' || typeof root.VoucherEngine.validateVoucher === 'function')) {
+                        const evalFn = root.VoucherEngine.calculateDiscount || root.VoucherEngine.validateVoucher;
+                        const calcRes = evalFn.call(root.VoucherEngine, savedVoucher, currentCheckoutSubtotal || 0, currentBillOrderItems || []);
+                        if (calcRes && calcRes.valid && calcRes.discountAmount > 0) {
+                            discountAmt = calcRes.discountAmount;
+                            savedVoucher.discountAmount = discountAmt;
+                        }
+                    }
+                    vAppliedInfo.textContent = discountAmt > 0 ? `Đã áp dụng giảm: ${formatMoney(discountAmt)}` : `Đã áp dụng voucher: ${savedVoucher.code || savedVoucher.id}`;
                     vAppliedInfo.classList.remove('hidden');
                 }
                 if (vApplyBtn) vApplyBtn.classList.add('hidden');
@@ -3204,10 +3254,19 @@
                 ? normalizeTableCode(currentCheckoutTable)
                 : String(currentCheckoutTable || '').replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
             tableVouchers[cleanT] = res;
+            if (currentCheckoutTable) tableVouchers[currentCheckoutTable] = res;
+
+            // Đồng bộ in-memory allTables ngay lập tức
+            const curTableObj = (typeof allTables !== 'undefined' && Array.isArray(allTables))
+                ? allTables.find(t => isSameTable(t.name, currentCheckoutTable) || isSameTable(t.id, cleanT))
+                : null;
+            if (curTableObj) {
+                curTableObj.applied_voucher = voucherPayload;
+            }
 
             // Đồng bộ lưu voucher vào Firestore tables/{cleanT}
             try {
-                setDoc(doc(db, "tables", cleanT), {
+                await setDoc(doc(db, "tables", cleanT), {
                     applied_voucher: voucherPayload,
                     updated_at: serverTimestamp()
                 }, { merge: true });
@@ -3244,6 +3303,14 @@
 
             currentBillAppliedVoucher = null;
             delete tableVouchers[cleanT];
+            if (currentCheckoutTable) delete tableVouchers[currentCheckoutTable];
+
+            const curTableObj = (typeof allTables !== 'undefined' && Array.isArray(allTables))
+                ? allTables.find(t => isSameTable(t.name, currentCheckoutTable) || isSameTable(t.id, cleanT))
+                : null;
+            if (curTableObj) {
+                curTableObj.applied_voucher = null;
+            }
 
             // Trả voucher về available trong kho và xóa khỏi tables document
             try {
