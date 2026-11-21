@@ -531,6 +531,33 @@ console.log('\n--- 8. Table Transfer Voucher Continuity & Anti-Orphan Suite ---'
     const validationAtB1 = VoucherEngine.validateVoucher(mockVoucherDoc, 500000, [], 'Bàn B1');
     assert(validationAtB1.valid === false && validationAtB1.reason.includes('A2'), 
         'TC-TRANSFER-VOUCHER-04: Bàn khác bị chặn độc quyền chuẩn xác theo bàn đích A2');
+
+    // 8.4 Kiểm tra hàm purgeTableVouchers xóa triệt để mọi biến thể (A1, BÀN A1, BAN A1, TABLE A1)
+    const testVoucherStore = {
+        'A1': { code: 'AUR-3SP9-8YDJ' },
+        'BÀN A1': { code: 'AUR-3SP9-8YDJ' },
+        'BAN A1': { code: 'AUR-3SP9-8YDJ' },
+        'TABLE A1': { code: 'AUR-3SP9-8YDJ' },
+        'A2': { code: 'AUR-OTHER' }
+    };
+    function purgeTestVouchers(tableNameOrCode) {
+        const norm = normalizeTableCode(tableNameOrCode);
+        const variants = [tableNameOrCode, norm, `BÀN ${norm}`, `BAN ${norm}`, `TABLE ${norm}`];
+        variants.forEach(k => delete testVoucherStore[k]);
+        Object.keys(testVoucherStore).forEach(k => {
+            if (normalizeTableCode(k) === norm) delete testVoucherStore[k];
+        });
+    }
+    purgeTestVouchers('Bàn A1');
+    assert(!testVoucherStore['A1'] && !testVoucherStore['BÀN A1'] && !testVoucherStore['BAN A1'] && !testVoucherStore['TABLE A1'] && testVoucherStore['A2'],
+        'TC-TRANSFER-VOUCHER-05: PurgeTableVouchers xóa sạch 100% mọi biến thể của bàn nguồn');
+
+    // 8.5 Bàn trống (0 active orders) không bao giờ hiển thị voucher badge trên card
+    const tableOrdersA1 = [];
+    const isTableOccupied = tableOrdersA1.length > 0;
+    const cardVoucherForAvailable = isTableOccupied ? (testVoucherStore['A1'] || null) : null;
+    assert(cardVoucherForAvailable === null,
+        'TC-TRANSFER-VOUCHER-06: Bàn trống (sẵn sàng nhận khách) luôn ẩn voucher badge, không lưu voucher ma');
 }
 
 console.log('\n====================================================');

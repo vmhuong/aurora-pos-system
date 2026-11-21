@@ -129,6 +129,61 @@
     root.tableVouchers = tableVouchers;
     if (typeof window !== 'undefined') window.tableVouchers = tableVouchers;
 
+    // Biến trạng thái modal thanh toán & voucher hiện hành
+    let currentCheckoutTable = null;
+    let currentBillAppliedVoucher = null;
+
+    // Helper tạo danh sách tất cả các biến thể tên/mã của bàn (vd: 'A1', 'Bàn A1', 'BAN A1')
+    function getTableVariants(tableName) {
+        if (!tableName) return [];
+        const raw = String(tableName).trim().toUpperCase();
+        const norm = normalizeTableCode(raw);
+        return Array.from(new Set([
+            raw,
+            norm,
+            `BÀN ${norm}`,
+            `BAN ${norm}`,
+            `TABLE ${norm}`
+        ])).filter(Boolean);
+    }
+    window.getTableVariants = getTableVariants;
+
+    // Helper xóa triệt để voucher của 1 bàn khỏi mọi biến thể trong cache tableVouchers
+    function purgeTableVouchers(tableNameOrCode) {
+        if (!tableNameOrCode) return;
+        const norm = normalizeTableCode(tableNameOrCode);
+        const variants = getTableVariants(tableNameOrCode);
+        variants.forEach(k => {
+            delete tableVouchers[k];
+        });
+        Object.keys(tableVouchers).forEach(k => {
+            if (isSameTable(k, tableNameOrCode) || normalizeTableCode(k) === norm) {
+                delete tableVouchers[k];
+            }
+        });
+        if (currentCheckoutTable && (isSameTable(currentCheckoutTable, tableNameOrCode) || normalizeTableCode(currentCheckoutTable) === norm)) {
+            currentBillAppliedVoucher = null;
+        }
+    }
+    window.purgeTableVouchers = purgeTableVouchers;
+
+    // Helper tìm voucher đang áp dụng cho bàn (từ tableVouchers cache hoặc allTables document)
+    function findVoucherForTable(tableNameOrCode) {
+        if (!tableNameOrCode) return null;
+        const variants = getTableVariants(tableNameOrCode);
+        for (const vk of variants) {
+            if (tableVouchers[vk] && typeof tableVouchers[vk] === 'object' && (tableVouchers[vk].code || tableVouchers[vk].id)) {
+                return tableVouchers[vk];
+            }
+        }
+        const tObj = allTables.find(t => isSameTable(t.name, tableNameOrCode) || isSameTable(t.id, tableNameOrCode));
+        if (tObj && tObj.applied_voucher && typeof tObj.applied_voucher === 'object' && (tObj.applied_voucher.code || tObj.applied_voucher.id)) {
+            return tObj.applied_voucher;
+        }
+        return null;
+    }
+    window.findVoucherForTable = findVoucherForTable;
+
     // THUẬT TOÁN SẮP XẾP BÀN TỰ NHIÊN CHUẨN XÁC THEO KHU VỰC VÀ SỐ (A1, A2... B1, B2... C1, C2...)
     function getTableSortKey(tableNameOrObj) {
         const raw = (typeof tableNameOrObj === 'object' && tableNameOrObj !== null)
@@ -250,19 +305,24 @@
 
                         // 1. Đồng bộ Voucher tức thời (Add / Cancel)
                         let v = data.applied_voucher;
-                        const curCheckoutT = (typeof window !== 'undefined' ? window.currentCheckoutTable : '') || root.currentCheckoutTable || '';
-                        if (curCheckoutT && (isSameTable(curCheckoutT, name) || isSameTable(curCheckoutT, cleanCode))) {
-                            if (currentBillAppliedVoucher && (!v || !v.code)) {
-                                v = currentBillAppliedVoucher;
+                        // Nếu trong Firestore bàn này đã là available hoặc applied_voucher rỗng -> Tuyệt đối không để cache cũ ghi đè
+                        if (data.status === 'available' || data.applied_voucher === null || data.applied_voucher === undefined) {
+                            v = null;
+                            purgeTableVouchers(name || cleanCode);
+                        } else {
+                            const curCheckoutT = (typeof window !== 'undefined' ? window.currentCheckoutTable : '') || root.currentCheckoutTable || currentCheckoutTable || '';
+                            if (curCheckoutT && (isSameTable(curCheckoutT, name) || isSameTable(curCheckoutT, cleanCode))) {
+                                if (currentBillAppliedVoucher && (!v || !v.code)) {
+                                    v = currentBillAppliedVoucher;
+                                }
                             }
                         }
 
                         if (v && typeof v === 'object' && (v.code || v.id || v.value)) {
-                            tableVouchers[cleanCode] = v;
-                            if (name) tableVouchers[name] = v;
+                            const variants = getTableVariants(name || cleanCode);
+                            variants.forEach(k => tableVouchers[k] = v);
                         } else {
-                            delete tableVouchers[cleanCode];
-                            if (name) delete tableVouchers[name];
+                            purgeTableVouchers(name || cleanCode);
                         }
 
                         // 2. Đồng bộ Khách hàng tức thời (Login / Logout / Points)
@@ -1106,10 +1166,17 @@
                 }
 
                 const cleanTableCode = (typeof normalizeTableCode === 'function') ? normalizeTableCode(tableName) : String(tableName).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
-                const cardCust = (root.AdminLoyalty && typeof root.AdminLoyalty.getCustomerForTable === 'function')
-                    ? root.AdminLoyalty.getCustomerForTable(tableName)
-                    : (t.attached_customer || null);
-                const cardVoucher = tableVouchers[cleanTableCode] || tableVouchers[tableName] || t.applied_voucher || null;
+                const isTableOccupied = tableOrders.length > 0;
+                const cardCust = isTableOccupied
+                    ? ((root.AdminLoyalty && typeof root.AdminLoyalty.getCustomerForTable === 'function')
+                        ? root.AdminLoyalty.getCustomerForTable(tableName)
+                        : (t.attached_customer || null))
+                    : null;
+                const cardVoucher = isTableOccupied ? (findVoucherForTable(tableName) || findVoucherForTable(cleanTableCode) || t.applied_voucher || null) : null;
+                if (!isTableOccupied) {
+                    purgeTableVouchers(tableName);
+                    purgeTableVouchers(cleanTableCode);
+                }
 
                 const card = document.createElement('div');
                 card.className = `${cardBorder} rounded-xl overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between text-xs bg-white h-full min-h-0 max-h-[350px] cursor-pointer select-none`;
@@ -1793,17 +1860,22 @@
 
                 const cleanDetailCode = (typeof normalizeTableCode === 'function') ? normalizeTableCode(tableName) : String(tableName).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
                 const currentTObj = (typeof allTables !== 'undefined' && Array.isArray(allTables)) ? allTables.find(t => isSameTable(t.name, tableName) || isSameTable(t.id, tableName)) : null;
-                const custInDetail = (root.AdminLoyalty && typeof root.AdminLoyalty.getCustomerForTable === 'function')
-                    ? root.AdminLoyalty.getCustomerForTable(tableName)
-                    : ((currentTObj && currentTObj.attached_customer) || null);
-                const vouchInDetail = tableVouchers[cleanDetailCode] || tableVouchers[tableName] || (currentTObj && currentTObj.applied_voucher) || null;
+                const isDetailOccupied = tableOrders.length > 0;
+                const custInDetail = isDetailOccupied
+                    ? ((root.AdminLoyalty && typeof root.AdminLoyalty.getCustomerForTable === 'function')
+                        ? root.AdminLoyalty.getCustomerForTable(tableName)
+                        : ((currentTObj && currentTObj.attached_customer) || null))
+                    : null;
+                const vouchInDetail = isDetailOccupied ? (findVoucherForTable(tableName) || findVoucherForTable(cleanDetailCode) || (currentTObj && currentTObj.applied_voucher) || null) : null;
+                if (!isDetailOccupied) {
+                    purgeTableVouchers(tableName);
+                    purgeTableVouchers(cleanDetailCode);
+                }
 
                 if (tableOrders.length === 0) {
                     tdCachedSubHtml = `
                         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-600 mt-0.5">
                             <span class="bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1"><i class="fa-solid fa-chair text-slate-500"></i> Bàn sẵn sàng</span>
-                            ${custInDetail && (custInDetail.name || custInDetail.phone) ? `<span class="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1"><i class="fa-solid fa-user text-amber-600 text-[10px]"></i> Khách: <strong>${escapeHtml(custInDetail.name || custInDetail.phone)}</strong></span>` : ''}
-                            ${vouchInDetail && (vouchInDetail.code || vouchInDetail.id) ? `<span class="bg-purple-100 text-purple-900 border border-purple-300 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1"><i class="fa-solid fa-ticket text-purple-600 text-[10px]"></i> Voucher: <strong class="font-mono">${escapeHtml(vouchInDetail.code || vouchInDetail.id)}</strong></span>` : ''}
                         </div>
                     `;
                     tdCachedGrandTotal = 0;
@@ -2407,11 +2479,18 @@
                         });
                     } catch(e) {}
 
-                    // Giải phóng bàn nguồn về available và lưu vết transferred_to
+                    // Lấy đối tượng bàn nguồn và bàn đích ở phạm vi hàm để tránh lỗi scope
+                    const normSrc = (typeof normalizeTableCode === 'function') ? normalizeTableCode(sourceClean) : String(sourceClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
+                    const normTarget = (typeof normalizeTableCode === 'function') ? normalizeTableCode(targetClean) : String(targetClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
+                    const targetTableObj = allTables.find(t => isSameTable(t.name, targetClean) || isSameTable(t.id, targetClean) || isSameTable(t.name, normTarget) || isSameTable(t.id, normTarget));
+                    const sourceTableObj = allTables.find(t => isSameTable(t.name, sourceClean) || isSameTable(t.id, sourceClean) || isSameTable(t.name, normSrc) || isSameTable(t.id, normSrc));
+
+                    // Lấy voucher bàn nguồn (hỗ trợ toàn diện từ cache mọi biến thể và Firestore table doc)
+                    const srcVoucher = findVoucherForTable(sourceClean) || findVoucherForTable(normSrc) || (sourceTableObj && sourceTableObj.applied_voucher) || null;
+
+                    // 1. Giải phóng bàn nguồn về available và lưu vết transferred_to
                     try {
-                        const targetTableObj = allTables.find(t => isSameTable(t.name, targetClean) || isSameTable(t.id, targetClean));
-                        const sourceTableObj = allTables.find(t => isSameTable(t.name, sourceClean) || isSameTable(t.id, sourceClean));
-                        const sourceDocId = (sourceTableObj && sourceTableObj.id) ? sourceTableObj.id : (normalizeTableCode(sourceClean) || sourceClean);
+                        const sourceDocId = (sourceTableObj && sourceTableObj.id) ? sourceTableObj.id : (normSrc || sourceClean);
                         const sourceDocRef = doc(db, "tables", sourceDocId);
                         batch.set(sourceDocRef, {
                             status: "available",
@@ -2428,12 +2507,26 @@
                             use_points: false,
                             updated_at: serverTimestamp()
                         }, { merge: true });
-                    } catch(e) {}
 
-                    // Đảm bảo bàn đích dining và làm sạch cờ transferred cũ nếu có
+                        if (normSrc && normSrc !== sourceDocId) {
+                            batch.set(doc(db, "tables", normSrc), {
+                                status: "available",
+                                transferred_to: targetClean,
+                                transferred_to_token: targetTableObj?.qr_token || null,
+                                transferred_at: serverTimestamp(),
+                                attached_customer: null,
+                                applied_voucher: null,
+                                use_points: false,
+                                updated_at: serverTimestamp()
+                            }, { merge: true });
+                        }
+                    } catch(eSrc) {
+                        console.warn("Lỗi thiết lập bàn nguồn chuyển:", eSrc);
+                    }
+
+                    // 2. Đảm bảo bàn đích dining, nhận voucher và làm sạch cờ transferred cũ nếu có
                     try {
-                        const targetTableObj = allTables.find(t => isSameTable(t.name, targetClean) || isSameTable(t.id, targetClean));
-                        const targetDocId = (targetTableObj && targetTableObj.id) ? targetTableObj.id : (normalizeTableCode(targetClean) || targetClean);
+                        const targetDocId = (targetTableObj && targetTableObj.id) ? targetTableObj.id : (normTarget || targetClean);
                         const targetDocRef = doc(db, "tables", targetDocId);
                         const targetTableUpdate = {
                             status: "dining",
@@ -2446,18 +2539,18 @@
                         };
 
                         // Chuyển toàn bộ voucher đã áp dụng sang bàn đích (Case 1: Full Transfer)
-                        const normSrc = (typeof normalizeTableCode === 'function') ? normalizeTableCode(sourceClean) : String(sourceClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
-                        const normTarget = (typeof normalizeTableCode === 'function') ? normalizeTableCode(targetClean) : String(targetClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
-                        const srcVoucher = tableVouchers[normSrc] || tableVouchers[sourceClean] || (sourceTableObj && sourceTableObj.applied_voucher) || null;
                         if (srcVoucher) {
-                            const vCode = String(srcVoucher.code || srcVoucher.id || '').trim().toUpperCase();
-                            targetTableUpdate.applied_voucher = srcVoucher;
-                            tableVouchers[normTarget] = srcVoucher;
-                            tableVouchers[targetClean] = srcVoucher;
-                            delete tableVouchers[normSrc];
-                            delete tableVouchers[sourceClean];
-                            const srcTableDocId = (sourceTableObj && sourceTableObj.id) ? sourceTableObj.id : (normSrc || sourceClean);
-                            batch.set(doc(db, "tables", srcTableDocId), { applied_voucher: null }, { merge: true });
+                            const transferredVoucher = {
+                                ...srcVoucher,
+                                applied_table: normTarget,
+                                status: 'applied'
+                            };
+                            const vCode = String(transferredVoucher.code || transferredVoucher.id || '').trim().toUpperCase();
+                            targetTableUpdate.applied_voucher = transferredVoucher;
+
+                            // Gán vào RAM cho tất cả các biến thể bàn đích
+                            getTableVariants(targetClean).forEach(k => tableVouchers[k] = transferredVoucher);
+                            getTableVariants(normTarget).forEach(k => tableVouchers[k] = transferredVoucher);
 
                             // ĐỒNG BỘ FIRESTORE VOUCHER_CODES: Chuyển applied_table sang bàn đích (normTarget)
                             if (vCode) {
@@ -2469,8 +2562,35 @@
                             }
                         }
 
+                        // XÓA TRIỆT ĐỂ BÀN NGUỒN KHỎI MỌI BỘ NHỚ RAM
+                        purgeTableVouchers(sourceClean);
+                        purgeTableVouchers(normSrc);
+
+                        // Đồng bộ in-memory allTables cho cả 2 bàn
+                        allTables.forEach(t => {
+                            if (isSameTable(t.id, sourceClean) || isSameTable(t.name, sourceClean) || isSameTable(t.id, normSrc) || isSameTable(t.name, normSrc)) {
+                                t.applied_voucher = null;
+                                t.attached_customer = null;
+                                t.status = 'available';
+                                t.use_points = false;
+                            }
+                            if (isSameTable(t.id, targetClean) || isSameTable(t.name, targetClean) || isSameTable(t.id, normTarget) || isSameTable(t.name, normTarget)) {
+                                if (srcVoucher) t.applied_voucher = { ...srcVoucher, applied_table: normTarget, status: 'applied' };
+                                t.status = 'dining';
+                            }
+                        });
+
+                        // Nếu thu ngân đang mở checkout modal của bàn nguồn -> chuyển sang bàn đích hoặc đóng
+                        if (currentCheckoutTable && (isSameTable(currentCheckoutTable, sourceClean) || isSameTable(currentCheckoutTable, normSrc))) {
+                            currentCheckoutTable = targetClean;
+                            if (typeof window !== 'undefined') window.currentCheckoutTable = targetClean;
+                            currentBillAppliedVoucher = srcVoucher ? { ...srcVoucher, applied_table: normTarget, status: 'applied' } : null;
+                        }
+
                         batch.set(targetDocRef, targetTableUpdate, { merge: true });
-                    } catch(e) {}
+                    } catch(eTarget) {
+                        console.warn("Lỗi thiết lập bàn đích chuyển:", eTarget);
+                    }
 
                     await batch.commit();
 
@@ -2649,17 +2769,20 @@
 
                     const normSrc = (typeof normalizeTableCode === 'function') ? normalizeTableCode(sourceClean) : String(sourceClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
                     const normTarget = (typeof normalizeTableCode === 'function') ? normalizeTableCode(targetClean) : String(targetClean).replace(/^(BÀN|BAN|TABLE)\s*/i, '').trim().toUpperCase();
-                    const srcVoucher = tableVouchers[normSrc] || tableVouchers[sourceClean] || null;
+                    const srcVoucher = findVoucherForTable(sourceClean) || findVoucherForTable(normSrc) || null;
 
                     if (isAllMoved) {
                         // Chuyển toàn bộ voucher sang bàn đích
                         if (srcVoucher) {
-                            const vCode = String(srcVoucher.code || srcVoucher.id || '').trim().toUpperCase();
-                            tableVouchers[normTarget] = srcVoucher;
-                            tableVouchers[targetClean] = srcVoucher;
-                            delete tableVouchers[normSrc];
-                            delete tableVouchers[sourceClean];
-                            setDoc(doc(db, "tables", normTarget), { applied_voucher: srcVoucher, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
+                            const transferredVoucher = {
+                                ...srcVoucher,
+                                applied_table: normTarget,
+                                status: 'applied'
+                            };
+                            const vCode = String(transferredVoucher.code || transferredVoucher.id || '').trim().toUpperCase();
+                            getTableVariants(targetClean).forEach(k => tableVouchers[k] = transferredVoucher);
+                            getTableVariants(normTarget).forEach(k => tableVouchers[k] = transferredVoucher);
+                            setDoc(doc(db, "tables", normTarget), { applied_voucher: transferredVoucher, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
                             setDoc(doc(db, "tables", normSrc), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
                             if (vCode) {
                                 updateDoc(doc(db, "voucher_codes", vCode), {
@@ -2668,6 +2791,29 @@
                                     updated_at: serverTimestamp()
                                 }).catch(() => {});
                             }
+                        }
+
+                        // XÓA TRIỆT ĐỂ BÀN NGUỒN KHỎI MỌI BỘ NHỚ RAM
+                        purgeTableVouchers(sourceClean);
+                        purgeTableVouchers(normSrc);
+
+                        allTables.forEach(t => {
+                            if (isSameTable(t.id, sourceClean) || isSameTable(t.name, sourceClean) || isSameTable(t.id, normSrc) || isSameTable(t.name, normSrc)) {
+                                t.applied_voucher = null;
+                                t.attached_customer = null;
+                                t.status = 'available';
+                                t.use_points = false;
+                            }
+                            if (isSameTable(t.id, targetClean) || isSameTable(t.name, targetClean) || isSameTable(t.id, normTarget) || isSameTable(t.name, normTarget)) {
+                                if (srcVoucher) t.applied_voucher = { ...srcVoucher, applied_table: normTarget, status: 'applied' };
+                                t.status = 'dining';
+                            }
+                        });
+
+                        if (currentCheckoutTable && (isSameTable(currentCheckoutTable, sourceClean) || isSameTable(currentCheckoutTable, normSrc))) {
+                            currentCheckoutTable = targetClean;
+                            if (typeof window !== 'undefined') window.currentCheckoutTable = targetClean;
+                            currentBillAppliedVoucher = srcVoucher ? { ...srcVoucher, applied_table: normTarget, status: 'applied' } : null;
                         }
                     } else {
                         // BÀN NGUỒN CÒN MÓN -> KIỂM TRA LẠI (RE-VALIDATE) VOUCHER BÀN NGUỒN THEO ĐỀ XUẤT 2
@@ -2697,8 +2843,8 @@
                             }
 
                             if (shouldCancelVoucher) {
-                                delete tableVouchers[normSrc];
-                                delete tableVouchers[sourceClean];
+                                purgeTableVouchers(sourceClean);
+                                purgeTableVouchers(normSrc);
                                 setDoc(doc(db, "tables", normSrc), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
                                 const codeToRelease = srcVoucher.code || srcVoucher.id;
                                 if (codeToRelease) {
@@ -2730,7 +2876,9 @@
                 }
 
                 closeTableDetailModal();
-                if (typeof renderTables === 'function') {
+                if (typeof scheduleRenderTableBoard === 'function') {
+                    scheduleRenderTableBoard();
+                } else if (typeof renderTables === 'function') {
                     renderTables();
                 }
 
@@ -2782,11 +2930,11 @@
             }
         };
 
-        let currentCheckoutTable = null;
+        currentCheckoutTable = null;
         let currentCheckoutGrandTotal = 0;
         let currentCheckoutSubtotal = 0;
         let currentCheckoutPaymentMethod = '';
-        let currentBillAppliedVoucher = null;
+        currentBillAppliedVoucher = null;
         let currentBillOrderItems = [];
 
         // Bộ nhớ lưu các bàn đang dừng lại ở trạng thái chờ Webhook chuyển khoản (Lưu bền vững qua localStorage)
@@ -3107,19 +3255,20 @@
             const curTableObj = (typeof allTables !== 'undefined' && Array.isArray(allTables)) 
                 ? allTables.find(t => isSameTable(t.name, tableName) || isSameTable(t.id, cleanT)) 
                 : null;
-            let savedVoucher = tableVouchers[cleanT] || tableVouchers[tableName] || (curTableObj && curTableObj.applied_voucher) || null;
+            let savedVoucher = findVoucherForTable(cleanT) || findVoucherForTable(tableName) || (curTableObj && curTableObj.applied_voucher) || null;
             if (savedVoucher) {
                 const sCode = (savedVoucher.code || savedVoucher.id || '').toUpperCase();
-                // Kiểm tra trực tiếp xem voucher đã bị dùng thanh toán chưa
+                // Kiểm tra trực tiếp xem voucher đã bị dùng thanh toán hoặc chuyển sang bàn khác chưa
                 try {
                     const vSnap = await getDoc(doc(db, "voucher_codes", sCode));
                     if (vSnap.exists()) {
                         const vData = vSnap.data();
-                        if (vData.status === 'used') {
-                            // Mã đã sử dụng -> tự động gỡ sạch, không áp dụng vào bàn mới
+                        const normVoucherTable = normalizeTableCode(vData.applied_table || '');
+                        if (vData.status === 'used' || (vData.status === 'applied' && normVoucherTable && normVoucherTable !== cleanT)) {
+                            // Mã đã sử dụng hoặc đang áp dụng tại bàn khác -> tự động gỡ sạch khỏi bàn này
                             savedVoucher = null;
-                            delete tableVouchers[cleanT];
-                            delete tableVouchers[tableName];
+                            purgeTableVouchers(cleanT);
+                            purgeTableVouchers(tableName);
                             if (curTableObj) curTableObj.applied_voucher = null;
                             setDoc(doc(db, "tables", cleanT), { applied_voucher: null, updated_at: serverTimestamp() }, { merge: true }).catch(() => {});
                         }
